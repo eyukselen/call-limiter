@@ -1,16 +1,32 @@
 [project]
-name = "rate-limit-retry"
-version = "0.1.0"
-description = "A thread-safe decorator for rate limiting with exponential backoff retries."
+name = "call-limiter"
+version = "0.0.1"
+description = "Rate Limiter with retry - A hardware-calibrated approach for execution pacing and resilience."
 readme = "README.md"
-requires-python = ">=3.8"
-keywords = ["ratelimit", "retry", "throttle", "backoff", "429", "api"]
+authors = [{name="eyukselen"}]
+license = {file = "LICENSE"}
+keywords = ["rate-limit", "rate-limiter", "ratelimit", "retry", "throttle", "backoff", "throttling"]
 classifiers = [
-    "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Development Status :: 4 - Beta"
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+    "Topic :: Software Development :: Testing",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14"
 ]
+requires-python = ">=3.8"
+dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/yourusername/rate-limit-retry"
+Homepage = "https://github.com/eyukselen/call-limiter"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

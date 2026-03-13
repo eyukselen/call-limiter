@@ -15,7 +15,6 @@ dist/
 build/
 *.egg-info/
 MANIFEST
-eprofiler.egg-info/
 
 # Environments
 .venv/
