@@ -1,0 +1,16 @@
+[project]
+name = "rate-limit-retry"
+version = "0.1.0"
+description = "A thread-safe decorator for rate limiting with exponential backoff retries."
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["ratelimit", "retry", "throttle", "backoff", "429", "api"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta"
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/rate-limit-retry"

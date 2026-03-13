@@ -1,0 +1,31 @@
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# Python internals
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+
+# Distribution / Build
+dist/
+build/
+*.egg-info/
+MANIFEST
+eprofiler.egg-info/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation builds
+docs/_build/
