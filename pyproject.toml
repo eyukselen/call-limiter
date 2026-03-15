@@ -1,6 +1,6 @@
 [project]
 name = "call-limiter"
-version = "0.0.2"
+version = "0.0.3"
 description = "Rate Limiter with retry - A hardware-calibrated approach for execution pacing and resilience."
 readme = "README.md"
 authors = [{name="eyukselen"}]
