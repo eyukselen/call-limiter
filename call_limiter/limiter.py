@@ -1,11 +1,10 @@
 import time
 import threading
 from functools import wraps
+from typing import Callable, Tuple, Type, Optional, Any
 
 
 class CallLimiter:
-    """CASE 1: The Pacer. Focuses on hardware-calibrated execution speed."""
-
     def __init__(self, calls: int, period: float = 1.0, allow_burst: bool = False):
         self.rate = calls / period
         self.capacity = float(calls) if allow_burst else 1.0
@@ -13,7 +12,7 @@ class CallLimiter:
         self.last_refill = time.perf_counter()
         self.lock = threading.Lock()
 
-        # Zero-Hardcode: Hardware Calibration
+        # Hardware Calibration
         t0 = time.perf_counter()
         _ = time.perf_counter()
         self.pulse = time.perf_counter() - t0
@@ -22,24 +21,31 @@ class CallLimiter:
     def wait(self):
         with self.lock:
             now = time.perf_counter()
-            self.tokens = min(self.capacity, self.tokens + ((now - self.last_refill) * self.rate))
-            self.last_refill = now
+
+            # If the period has passed, reset the bucket and the window
+            if now - self.last_refill >= (1.0 / self.rate * self.capacity):  # Total period
+                self.tokens = self.capacity
+                self.last_refill = now
 
             if self.tokens < 1.0:
-                target_tokens = self.capacity
-                sleep_needed = (target_tokens - self.tokens) / self.rate
+                # Calculate time remaining in the current window
+                sleep_needed = (self.last_refill + (self.capacity / self.rate)) - now
 
-                if sleep_needed > self.os_jitter:
-                    t_before = time.perf_counter()
-                    time.sleep(max(0, sleep_needed - self.os_jitter))
-                    actual_sleep = time.perf_counter() - t_before
-                    self.os_jitter = max(self.os_jitter, actual_sleep - sleep_needed)
+                if sleep_needed > 0:
+                    # --- High Precision Sleep ---
+                    if sleep_needed > self.os_jitter:
+                        t_before = time.perf_counter()
+                        time.sleep(max(0, sleep_needed - self.os_jitter))
+                        self.os_jitter = max(self.os_jitter, (time.perf_counter() - t_before) - sleep_needed)
 
-                while ((self.last_refill + sleep_needed) - time.perf_counter()) > self.pulse:
-                    pass
+                    target = now + sleep_needed
+                    while time.perf_counter() < target:
+                        pass
 
-                self.tokens = target_tokens
+                # After waiting, the window resets
+                self.tokens = self.capacity
                 self.last_refill = time.perf_counter()
+
             self.tokens -= 1.0
 
     def __call__(self, func):
@@ -52,85 +58,91 @@ class CallLimiter:
 
 
 class CallRetry:
-    """CASE 2: The Rescuer. Focuses on resilience and the Master Brake."""
-
-    def __init__(self, retry_count: int = 3, retry_interval: float = 1.0,
-                 retry_exceptions: tuple = None, on_retry: callable = None):
+    def __init__(
+            self,
+            retry_count: int = 5,
+            retry_interval: float = 1.0,
+            retry_exceptions: Tuple[Type[Exception], ...] = (Exception,),
+            on_retry: Optional[Callable[[Exception, int], None]] = None,
+            fallback: Optional[Callable[[Exception], Any]] = None
+    ):
         self.retry_count = retry_count
         self.retry_interval = retry_interval
-        self.retry_exceptions = retry_exceptions or (Exception,)
+        self.retry_exceptions = retry_exceptions
         self.on_retry = on_retry
-        self.lock = threading.Lock()
-        self.is_braking = False
+        self.fallback = fallback
 
-        t0 = time.perf_counter()
-        self.pulse = time.perf_counter() - t0
-
-    def _trigger_recovery(self, attempt):
-        if attempt >= self.retry_count:
-            return False
-        with self.lock:
-            self.is_braking = True
-
-        time.sleep(max(0, self.retry_interval))
-
-        with self.lock:
-            self.is_braking = False
-        return True
-
-    def __call__(self, func):
+    def __call__(self, func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            attempt = 0
-            while True:
-                while self.is_braking:
-                    time.sleep(self.pulse)
+            last_exception = None
+
+            # 0 to retry_count means (retry_count + 1) total attempts
+            for attempt in range(1, self.retry_count + 2):
                 try:
                     return func(*args, **kwargs)
+
                 except self.retry_exceptions as e:
-                    if self.on_retry:
-                        self.on_retry(e, attempt + 1)
-                    if self._trigger_recovery(attempt):
-                        attempt += 1
+                    last_exception = e
+
+                    # Check if we have attempts left
+                    if attempt <= self.retry_count:
+                        # Observability: Fire the logger if provided
+                        if self.on_retry:
+                            self.on_retry(e, attempt)
+
+                        time.sleep(self.retry_interval)
                         continue
-                    raise e
+
+                    # If we reach here, we've exhausted retries
+                    if self.fallback:
+                        return self.fallback(e)
+
+                    raise last_exception
 
         return wrapper
 
 
-class ResilientLimiter(CallLimiter):
-    """CASE 3: The Hybrid. Pacing + Resilience for production pipelines."""
+import functools
+from typing import Callable, Optional, Any, Tuple, Type
 
-    def __init__(self, calls, period=1.0, retry_count=3, retry_interval=1.0,
-                 retry_exceptions=None, on_retry=None):
-        super().__init__(calls, period)
-        self.retry_count = retry_count
-        self.retry_interval = retry_interval
-        self.retry_exceptions = retry_exceptions or (Exception,)
-        self.on_retry = on_retry
 
-    def _trigger_recovery(self, attempt):
-        if attempt >= self.retry_count:
-            return False
-        with self.lock:
-            self.tokens = 0.0  # Master Brake: Drain the bucket
-        time.sleep(max(0, self.retry_interval))
-        return True
+class ResilientLimiter:
+    def __init__(
+            self,
+            calls: int,
+            period: float = 1.0,
+            allow_burst: bool = False,
+            retry_count: int = 3,
+            retry_interval: float = 1.0,
+            retry_exceptions: Tuple[Type[Exception], ...] = (Exception,),
+            on_retry: Optional[Callable[[Exception, int], None]] = None,
+            fallback: Optional[Callable[[Exception], Any]] = None
+    ):
+        # 1. Initialize the Rate Limiter (The Pace)
+        self.limiter = CallLimiter(
+            calls=calls,
+            period=period,
+            allow_burst=allow_burst
+        )
 
-    def __call__(self, func):
-        @wraps(func)
+        # 2. Initialize the Retry Logic (The Resilience)
+        self.retry = CallRetry(
+            retry_count=retry_count,
+            retry_interval=retry_interval,
+            retry_exceptions=retry_exceptions,
+            on_retry=on_retry,
+            fallback=fallback
+        )
+
+    def __call__(self, func: Callable) -> Callable:
+        # We wrap the function with Retry first, then Limiter.
+        # This ensures every individual attempt (including retries)
+        # is intercepted by the limiter's wait() logic.
+        @self.limiter
+        @self.retry
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            attempt = 0
-            while True:
-                self.wait()
-                try:
-                    return func(*args, **kwargs)
-                except self.retry_exceptions as e:
-                    if self.on_retry:
-                        self.on_retry(e, attempt + 1)
-                    if self._trigger_recovery(attempt):
-                        attempt += 1
-                        continue
-                    raise e
+            return func(*args, **kwargs)
 
         return wrapper

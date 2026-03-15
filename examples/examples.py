@@ -49,19 +49,28 @@ def simple_limiter():
         duration = end - start
         print(f"[{func.__name__}] repeated:", repeat, "times in:", f"{duration:.6f}", "seconds")
 
-    print("---start: limiter usage---")
-    limiter = CallLimiter(calls=5, period=2, allow_burst=False)
+    print("---start: CallLimiter usage---")
+    print("---start: CallLimiter with burst---")
+    limiter = CallLimiter(calls=5, period=2, allow_burst=True)
     throttled_func = limiter(base_func)
     start_time = time.perf_counter()
     pipeline(throttled_func)
     end_time = time.perf_counter()
     print(f"limiter total time: {end_time-start_time}")
-    print("---end: limiter usage---")
+
+    print("---start: CallLimiter with drip---")
+    limiter = CallLimiter(calls=5, period=2, allow_burst=False)
+    throttled_func = limiter(base_func)
+    start_time = time.perf_counter()
+    pipeline(throttled_func)
+    end_time = time.perf_counter()
+    print(f"limiter total time: {end_time - start_time}")
+    print("---end: CallLimiter usage---")
 
 # uncomment to run
 # simple_limiter()
-
 # endregion
+
 
 # region retry
 class MockService:
@@ -78,13 +87,17 @@ class MockService:
 
 mock_service = MockService()
 
-retry_manager = CallRetry(retry_count=5, retry_interval=1.0)
+retry_manager = CallRetry(retry_count=5,
+                          retry_interval=1.0,
+                          retry_exceptions=(Exception,),
+                          on_retry=None,
+                          fallback=None
+                          )
 resilient_func = retry_manager(mock_service.request)
 
+# uncomment to run
 for x in range(5):
     resilient_func(x)
-
-
 # endregion
 
 exit()
@@ -146,7 +159,7 @@ def pipeline():
 
 # region throttler with retry
 
-db_guard = ResilientThrottler(calls=10, period=1.0, allow_burst=False, retry_condition=lambda res: res.get("status") == 429)
+db_guard = ResilientLimiter(calls=10, period=1.0, allow_burst=False, retry_condition=lambda res: res.get("status") == 429)
 mock_db2 = MockDB(wcu=5)
 safe_put = db_guard(mock_db2.put_item)
 
@@ -169,7 +182,7 @@ print("---end: with throttler and retry---")
 
 # region multi threading - shared throttler with retry
 
-db_guard2 = ResilientThrottler(calls=10, period=1.0, allow_burst=False, retry_condition=lambda res: res.get("status") == 429)
+db_guard2 = ResilientLimiter(calls=10, period=1.0, allow_burst=False, retry_condition=lambda res: res.get("status") == 429)
 mock_db3 = MockDB(wcu=5)
 safe_put2 = db_guard(mock_db3.put_item)
 
