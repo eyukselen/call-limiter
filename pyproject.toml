@@ -26,6 +26,7 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/eyukselen/call-limiter"
+"Source Code" = "https://github.com/eyukselen/call-limiter"
 
 [build-system]
 requires = ["setuptools>=61.0"]
