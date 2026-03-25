@@ -106,4 +106,3 @@ def my_function():
 * Thread-Safe: Designed for multithreaded environments where multiple workers hit the same limited resource.
 * Thread-Synchronized State: Shared locks ensure that 10 threads hitting the same limiter behave as a single unit.
 * Synchronized Pacing: In hybrid mode, retries are queued through the global limiter, preventing a 'thundering herd' and ensuring you never exceed your quota during recovery.
-* 

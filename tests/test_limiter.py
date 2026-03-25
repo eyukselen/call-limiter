@@ -22,12 +22,39 @@ class TestCallLimiter:
         for i in range(4):
             identity(i)
 
-        # Each interval should be ~0.2s
+        # Each interval should be ~0.2s (±25% tolerance for CI/Cloud jitter)
         for i in range(len(timestamps) - 1):
             gap = timestamps[i + 1] - timestamps[i]
-            # Increased tolerance from 0.01 to 0.05 to account for CI/Cloud jitter
-            assert gap == pytest.approx(0.2, abs=0.20), f"Gap {i} was {gap}s, expected 0.2s"
+            assert gap == pytest.approx(0.2, abs=0.05), f"Gap {i} was {gap}s, expected 0.2s"
 
+    def test_paced_drip_different_ratios(self):
+        """Ensures drip mode works correctly with different calls/period ratios."""
+        # 10 calls per 2 seconds = 0.2s interval (same rate, different params)
+        limiter = CallLimiter(calls=10, period=2.0, allow_burst=False)
+        timestamps = []
+
+        @limiter
+        def record():
+            timestamps.append(time.perf_counter())
+
+        for _ in range(4):
+            record()
+
+        for i in range(len(timestamps) - 1):
+            gap = timestamps[i + 1] - timestamps[i]
+            assert gap == pytest.approx(0.2, abs=0.05), f"Gap {i} was {gap}s, expected 0.2s"
+
+        # 1 call per 0.5 seconds = 0.5s interval
+        timestamps.clear()
+        limiter2 = CallLimiter(calls=1, period=0.5, allow_burst=False)
+        record2 = limiter2(lambda: timestamps.append(time.perf_counter()))
+
+        for _ in range(3):
+            record2()
+
+        for i in range(len(timestamps) - 1):
+            gap = timestamps[i + 1] - timestamps[i]
+            assert gap == pytest.approx(0.5, abs=0.1), f"Gap {i} was {gap}s, expected 0.5s"
 
     def test_burst_behavior(self):
         """Ensures allow_burst=True allows immediate execution followed by a wait."""
@@ -53,6 +80,36 @@ class TestCallLimiter:
         total_duration = time.perf_counter() - start
         assert total_duration >= 0.2, "6th call did not wait for the refill drip"
 
+    def test_burst_full_cycle(self):
+        """Ensures a second burst fires correctly after the first burst + wait."""
+        calls = 3
+        period = 0.5
+        limiter = CallLimiter(calls=calls, period=period, allow_burst=True)
+
+        timestamps = []
+
+        @limiter
+        def record():
+            timestamps.append(time.perf_counter())
+
+        # First burst: 3 calls should be near-instant
+        for _ in range(3):
+            record()
+
+        first_burst_duration = timestamps[-1] - timestamps[0]
+        assert first_burst_duration < 0.01, f"First burst took {first_burst_duration}s"
+
+        # Next 3 calls trigger a wait, then should burst again
+        for _ in range(3):
+            record()
+
+        # Calls 3-5 (second burst) should also be near-instant relative to each other
+        second_burst_duration = timestamps[-1] - timestamps[3]
+        assert second_burst_duration < 0.01, f"Second burst took {second_burst_duration}s"
+
+        # But there should be a gap between the two bursts (~0.5s period)
+        gap_between_bursts = timestamps[3] - timestamps[0]
+        assert gap_between_bursts >= 0.4, f"Gap between bursts was {gap_between_bursts}s, expected ~0.5s"
 
     def test_multithreaded_safety(self):
         """Ensures the lock prevents race conditions with concurrent calls."""
@@ -79,6 +136,33 @@ class TestCallLimiter:
         # (1st call is free, 9 intervals of 0.05s)
         assert len(results) == 10
         assert (end - start) >= 0.44
+
+    def test_decorator_preserves_function_metadata(self):
+        """Ensures @wraps preserves the original function's name and docstring."""
+        limiter = CallLimiter(calls=5, period=1.0)
+
+        @limiter
+        def my_important_function():
+            """This is the docstring."""
+            pass
+
+        assert my_important_function.__name__ == "my_important_function"
+        assert my_important_function.__doc__ == "This is the docstring."
+
+    def test_limiter_recovery_after_pause(self):
+        """Ensures the bucket refills completely after a long pause."""
+        limiter = CallLimiter(calls=2, period=0.2, allow_burst=True)
+
+        # Spend tokens
+        limiter.wait()
+        limiter.wait()
+
+        # Wait for full refill
+        time.sleep(0.3)
+
+        start = time.perf_counter()
+        limiter.wait()  # Should be instant
+        assert (time.perf_counter() - start) < 0.01
 
 
 class TestCallRetry:
@@ -138,6 +222,72 @@ class TestCallRetry:
         with pytest.raises(ValueError, match="Ultimate Failure"):
             retry(constant_fail)()
 
+    def test_on_retry_callback_receives_correct_args(self):
+        """Ensures on_retry receives (exception, attempt_number) correctly."""
+        callback_args = []
+
+        def on_retry(exception, attempt_number):
+            callback_args.append((str(exception), attempt_number))
+
+        attempts = 0
+
+        def fail_twice():
+            nonlocal attempts
+            attempts += 1
+            if attempts <= 2:
+                raise ValueError(f"Fail {attempts}")
+            return "ok"
+
+        retry = CallRetry(retry_count=3, retry_interval=0.01, retry_exceptions=(ValueError,), on_retry=on_retry)
+        result = retry(fail_twice)()
+
+        assert result == "ok"
+        assert len(callback_args) == 2
+        assert callback_args[0] == ("Fail 1", 1)
+        assert callback_args[1] == ("Fail 2", 2)
+
+    def test_retry_count_zero(self):
+        """Ensures retry_count=0 means exactly 1 attempt with no retries."""
+
+        def always_fail():
+            raise ValueError("Boom")
+
+        retry = CallRetry(retry_count=0, retry_interval=0.01, retry_exceptions=(ValueError,))
+
+        with pytest.raises(ValueError, match="Boom"):
+            retry(always_fail)()
+
+    def test_retry_catches_multiple_exception_types(self):
+        """Ensures retry works with a tuple of multiple exception types."""
+        attempts = 0
+
+        def mixed_errors():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise ValueError("val")
+            if attempts == 2:
+                raise KeyError("key")
+            return "ok"
+
+        retry = CallRetry(retry_count=3, retry_interval=0.01, retry_exceptions=(ValueError, KeyError))
+        result = retry(mixed_errors)()
+
+        assert result == "ok"
+        assert attempts == 3
+
+    def test_decorator_preserves_function_metadata(self):
+        """Ensures @wraps preserves the original function's name and docstring."""
+        retry = CallRetry(retry_count=3, retry_interval=0.01)
+
+        @retry
+        def my_retried_function():
+            """Retry docstring."""
+            pass
+
+        assert my_retried_function.__name__ == "my_retried_function"
+        assert my_retried_function.__doc__ == "Retry docstring."
+
 
 class TestResilientLimiter:
     def test_documented_scenario(self):
@@ -168,6 +318,37 @@ class TestResilientLimiter:
         assert events == ["retry_1", "retry_2", "failed"]
         assert result == "fallback_value"
 
+    def test_retries_respect_rate_limit(self):
+        """Ensures each retry attempt goes through the rate limiter."""
+        timestamps = []
+
+        attempts = 0
+
+        @ResilientLimiter(
+            calls=5,
+            period=1.0,
+            allow_burst=False,  # drip: 0.2s between calls
+            retry_count=3,
+            retry_exceptions=(ValueError,)
+        )
+        def fail_then_succeed():
+            nonlocal attempts
+            timestamps.append(time.perf_counter())
+            attempts += 1
+            if attempts <= 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = fail_then_succeed()
+        assert result == "ok"
+        assert attempts == 3
+
+        # Each attempt should be spaced by ~0.2s (drip interval)
+        for i in range(len(timestamps) - 1):
+            gap = timestamps[i + 1] - timestamps[i]
+            assert gap >= 0.15, f"Gap {i} was {gap}s, retries should respect rate limiter pacing"
+
+
 
 class TestEdgeCases:
     def test_argument_propagation(self):
@@ -180,40 +361,10 @@ class TestEdgeCases:
 
         assert add(2, 3, multiplier=2) == 10
 
-    def test_retry_return_value(self):
-        """Ensures the successful return value is captured after retries."""
-        count = 0
 
-        def fail_once():
-            nonlocal count
-            count += 1
-            if count == 1: raise ValueError("First fail")
-            return {"status": "ok"}
-
-        retry = CallRetry(retry_count=2, retry_interval=0.01)
-        assert retry(fail_once)() == {"status": "ok"}
-
-    def test_limiter_recovery(self):
-        """Ensures the bucket refills completely after a long pause."""
-        limiter = CallLimiter(calls=2, period=0.2, allow_burst=True)
-
-        # Spend tokens
-        limiter.wait()
-        limiter.wait()
-
-        # Wait for full refill
-        time.sleep(0.3)
-
-        start = time.perf_counter()
-        limiter.wait()  # Should be instant
-        assert (time.perf_counter() - start) < 0.01
 
 
 class TestStressTest:
-    def test_high_frequency_throughput(self):
-        # ... (This one passed, keep as is) ...
-        pass
-
     def test_heavy_concurrency_contention(self):
         """STRESS TEST 2: High contention with Burst."""
         limiter = CallLimiter(calls=500, period=1.0, allow_burst=True)
@@ -246,7 +397,6 @@ class TestStressTest:
             calls=1000,
             period=1.0,
             retry_count=2,
-            retry_interval=0.001,
             retry_exceptions=(RuntimeError,)
         )
         def unstable_service(i):
