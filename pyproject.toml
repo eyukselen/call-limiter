@@ -1,14 +1,18 @@
 [project]
 name = "call-limiter"
-version = "0.0.3"
-description = "Rate Limiter with retry - A hardware-calibrated approach for execution pacing and resilience."
+version = "0.0.4"
+description = "Thread-safe rate limiter and retry decorator for Python - token bucket pacing, resilient API call management, zero dependencies."
 readme = "README.md"
 authors = [{name="eyukselen"}]
 license = {file = "LICENSE"}
-keywords = ["rate-limit", "rate-limiter", "ratelimit", "retry", "throttle", "backoff", "throttling"]
+keywords = ["rate-limit", "rate-limiter", "ratelimit", "retry", "throttle", "throttling", "api", "decorator", "thread-safe", "token-bucket", "resilient", "pacing"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Topic :: Internet",
+    "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
     "Topic :: Software Development :: Testing",
