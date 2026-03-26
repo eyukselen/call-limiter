@@ -1,6 +1,6 @@
 [project]
 name = "call-limiter"
-version = "0.0.4"
+version = "0.0.5"
 description = "Thread-safe rate limiter and retry decorator for Python - token bucket pacing, resilient API call management, zero dependencies."
 readme = "README.md"
 authors = [{name="eyukselen"}]
@@ -31,7 +31,7 @@ dependencies = []
 [project.urls]
 Homepage = "https://github.com/eyukselen/call-limiter"
 "Source Code" = "https://github.com/eyukselen/call-limiter"
-Documentation = "https://call-limiter.readthedocs.io/en/latest/"
+"Documentation" = "https://call-limiter.readthedocs.io/"
 
 [build-system]
 requires = ["setuptools>=61.0"]
