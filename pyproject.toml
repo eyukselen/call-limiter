@@ -1,13 +1,13 @@
 [project]
 name = "call-limiter"
-version = "0.0.5"
+version = "1.0.0"
 description = "Thread-safe rate limiter and retry decorator for Python - token bucket pacing, resilient API call management, zero dependencies."
 readme = "README.md"
 authors = [{name="eyukselen"}]
 license = {file = "LICENSE"}
 keywords = ["rate-limit", "rate-limiter", "ratelimit", "retry", "throttle", "throttling", "api", "decorator", "thread-safe", "token-bucket", "resilient", "pacing"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -31,7 +31,8 @@ dependencies = []
 [project.urls]
 Homepage = "https://github.com/eyukselen/call-limiter"
 "Source Code" = "https://github.com/eyukselen/call-limiter"
-"Documentation" = "https://call-limiter.readthedocs.io/"
+"Documentation" = "https://call-limiter.readthedocs.io"
+"Release Notes" = "https://github.com/eyukselen/call-limiter/releases"
 
 [build-system]
 requires = ["setuptools>=61.0"]
