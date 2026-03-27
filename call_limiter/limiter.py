@@ -82,7 +82,15 @@ class CallLimiter:
                     # The busy-wait loop corrects forward to the exact target.
                     # This prevents overshoot on high-jitter systems (e.g. macOS)
                     # where time.sleep() can exceed the requested duration.
-                    safety_margin = max(self.os_jitter, sleep_needed * 0.2)
+                    #
+                    # Before enough jitter samples are collected, use a large
+                    # percentage-based margin (60%) so the busy-wait handles
+                    # most of the wait. Once os_jitter has learned the real
+                    # platform jitter, switch to using it directly.
+                    if self.samples_collected < 3:
+                        safety_margin = sleep_needed * 0.6
+                    else:
+                        safety_margin = max(self.os_jitter, sleep_needed * 0.1)
                     coarse = sleep_needed - safety_margin
 
                     if coarse > 0:
