@@ -52,8 +52,6 @@ class CallLimiter:
         self.last_refill = time.perf_counter()
         self.lock = threading.Lock()
 
-        # Initial calibration for os_jitter (Cold Start)
-        # Starts at 0.0 and learns the actual OS jitter from real sleep calls.
         self.os_jitter = 0.0
         self.samples_collected = 0
 
@@ -80,20 +78,23 @@ class CallLimiter:
 
                 if sleep_needed > 0:
                     # --- High Precision Sleep ---
-                    if sleep_needed > self.os_jitter:
+                    # Use a safety margin to always undershoot time.sleep().
+                    # The busy-wait loop corrects forward to the exact target.
+                    # This prevents overshoot on high-jitter systems (e.g. macOS)
+                    # where time.sleep() can exceed the requested duration.
+                    safety_margin = max(self.os_jitter, sleep_needed * 0.2)
+                    coarse = sleep_needed - safety_margin
+
+                    if coarse > 0:
                         t_before = time.perf_counter()
-                        time.sleep(max(0, sleep_needed - self.os_jitter))
+                        time.sleep(coarse)
                         actual_sleep = time.perf_counter() - t_before
-                        
-                        # Update os_jitter with adaptive moving average (EMA)
-                        # Instead of a hardcoded decay, we use a learning phase.
-                        measured_jitter = max(0, actual_sleep - (sleep_needed - self.os_jitter))
-                        
+
+                        # Learn OS jitter via adaptive EMA
+                        measured_jitter = max(0, actual_sleep - coarse)
                         self.samples_collected += 1
-                        # Fast-start: learn quickly in the first 20 calls, then stabilize.
-                        # This avoids a hardcoded decay constant while handling the "cold start".
                         alpha = 1.0 / min(20, self.samples_collected)
-                        self.os_jitter = (self.os_jitter * (1 - alpha)) + (measured_jitter * alpha)
+                        self.os_jitter = min(0.1, (self.os_jitter * (1 - alpha)) + (measured_jitter * alpha))
 
                     target = now + sleep_needed
                     while time.perf_counter() < target:

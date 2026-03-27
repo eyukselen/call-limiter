@@ -23,12 +23,9 @@ class TestCallLimiter:
             identity(i)
 
         # Each interval should be ~0.2s
-        # macOS CI runners have high timer jitter (~40%), especially during cold-start
-        # calibration, so we use wider tolerances for the first two gaps
         for i in range(len(timestamps) - 1):
             gap = timestamps[i + 1] - timestamps[i]
-            tolerance = 0.10 if i <= 1 else 0.05
-            assert gap == pytest.approx(0.2, abs=tolerance), f"Gap {i} was {gap}s, expected 0.2s"
+            assert gap == pytest.approx(0.2, abs=0.05), f"Gap {i} was {gap}s, expected 0.2s"
 
     def test_paced_drip_different_ratios(self):
         """Ensures drip mode works correctly with different calls/period ratios."""
@@ -45,8 +42,7 @@ class TestCallLimiter:
 
         for i in range(len(timestamps) - 1):
             gap = timestamps[i + 1] - timestamps[i]
-            tolerance = 0.10 if i <= 1 else 0.07
-            assert gap == pytest.approx(0.2, abs=tolerance), f"Gap {i} was {gap}s, expected 0.2s"
+            assert gap == pytest.approx(0.2, abs=0.05), f"Gap {i} was {gap}s, expected 0.2s"
 
         # 1 call per 0.5 seconds = 0.5s interval
         timestamps.clear()
