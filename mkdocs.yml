@@ -32,7 +32,6 @@ plugins:
             show_root_heading: true
             heading_level: 3
             docstring_style: google
-  - macros
 
 nav:
   - Home: index.md
