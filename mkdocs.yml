@@ -39,6 +39,3 @@ nav:
   - Getting Started: getting-started.md
   - API Reference: api.md
   - Examples: examples.md
-
-extra:
-  version: !python/object/apply:call_limiter.__init__.__version__
