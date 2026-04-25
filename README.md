@@ -2,7 +2,6 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/call-limiter?color=blue&cache_bust=1)](https://pypi.org/project/call-limiter/)
 [![Build Status](https://github.com/eyukselen/call-limiter/actions/workflows/python-tests.yml/badge.svg)](https://github.com/eyukselen/call-limiter/actions)
-[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/eyukselen/call-limiter/actions)
 [![Python Versions](https://img.shields.io/pypi/pyversions/call-limiter)](https://pypi.org/project/call-limiter/)
 [![License](https://img.shields.io/pypi/l/call-limiter?color=orange)](https://opensource.org/licenses/MIT)
 
