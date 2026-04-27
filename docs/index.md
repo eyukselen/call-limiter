@@ -2,6 +2,8 @@
 
 Thread-safe Python decorators for synchronized rate limiting and retry logic.
 
+<img src="assets/call_limiter_thumbnail.png" alt="Call-Limiter Design" width="500">
+
 ## Core Components
 
 * **CallLimiter**: A high-precision throttler that paces function calls to stay within specific rate limits.

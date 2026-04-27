@@ -6,10 +6,10 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/call-limiter)](https://pypi.org/project/call-limiter/)
 [![License](https://img.shields.io/pypi/l/call-limiter?color=orange)](https://opensource.org/licenses/MIT)
 
-
-
-
 Thread-safe Python decorators for synchronized rate limiting and retry logic.
+
+<img src="docs/assets/call_limiter_thumbnail.png" alt="Call-Limiter Design" width="500">
+
 ## 📦 Core Components
 
 * **CallLimiter**: A high-precision throttler that paces function calls to stay within specific rate limits.
