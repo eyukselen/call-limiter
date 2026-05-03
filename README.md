@@ -6,15 +6,134 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/call-limiter)](https://pypi.org/project/call-limiter/)
 [![License](https://img.shields.io/pypi/l/call-limiter?color=orange)](https://opensource.org/licenses/MIT)
 
-Thread-safe Python decorators for synchronized rate limiting and retry logic.
+A high-precision concurrency control library for distributed systems resilience.
 
 <img src="docs/assets/call_limiter_thumbnail.png" alt="Call-Limiter Design" width="500">
 
+## ✨ Key Features
+
+* Low-Jitter Timing: Uses time.perf_counter() and resolution-aware sleeping to prevent the "creeping delays" common in standard rate limiters.
+* Dynamic Jitter Compensation: Automatically adjusts for OS-level scheduling delays to ensure time.sleep intervals remain precise under heavy system load.
+* Thread-Safe: Designed for multithreaded environments where multiple workers hit the same limited resource.
+* Thread-Synchronized State: Shared locks ensure that 10 threads hitting the same limiter behave as a single unit.
+* Synchronized Pacing: In hybrid mode, retries are queued through the global limiter, preventing a 'thundering herd' and ensuring you never exceed your quota during recovery.
+
+---
 ## 📦 Core Components
 
 * **CallLimiter**: A high-precision throttler that paces function calls to stay within specific rate limits.
+
+
+<details>
+<summary><b>⏱️ View Throttling Strategy Diagram</b></summary>
+
+```
+Burst mode for 5 calls per 10 seconds:  
+Time (s)  0              5              10                            20
+          |-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----  
+Call-1    [████]                        |                             |
+Call-2    [█████]                       |                             |
+Call-3    [██]                          |                             |
+Call-4    [█████]                       |                             |
+Call-5    [█]                           |                             |
+Call-6                                  |[████]                       |  
+Call-7                                  |[█████]                      |       
+Call-8                                  |[██]                         |        
+Call-9                                  |[█████]                      |     
+Call-10                                 |[█]                          |     
+
+Drip mode for 5 calls per 10 seconds:
+Time (s)  0              5              10                            20
+          |-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
+Call-1    [████]                        |                             |
+Call-2          [█████]                 |                             |
+Call-3                [██]              |                             |
+Call-4                      [█████]     |                             |
+Call-5                            [█]   |                             |
+Call-6                                  |[████]                       | 
+Call-7                                  |      [█████]                |
+Call-8                                  |            [██]             |
+Call-9                                  |                 [█████]     |
+Call-10                                 |                       [█]   |
+```
+</details>
+
+
+
 * **CallRetry**: A resilience decorator that re-runs failed functions with a configurable delay and exception handling.
+
+<details>
+<summary><b>⏱️ View Retry Strategy Diagram</b></summary>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as "Client Code"
+    participant R as "CallRetry Decorator"
+    participant API as "Downstream Service"
+
+    App->>R: Invoke Function
+    
+    loop "Up to max_retry times"
+        R->>API: Attempt Execution
+        alt "Success"
+            API-->>R: Return Data
+            R-->>App: Return Result
+        else "Error (Retryable)"
+            Note over R, API: "Trigger on_retry hook"
+            R->>R: "Wait (retry_interval)"
+        end
+    end
+
+    alt "All Attempts Exhausted"
+        R->>R: "Execute fallback_handler"
+        R-->>App: "Return Fallback Result"
+    else "No Fallback"
+        R-->>App: "Raise Final Exception"
+    end
+``` 
+
+</details>
+
 * **ResilientLimiter**: A hybrid solution that combines pacing with Coordinated Recovery, ensuring retries never exceed your defined rate limit across threads.
+
+<details>
+<summary><b>⏱️ View Resilient Strategy Diagram</b></summary>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as "Client Code"
+    participant RL as "ResilientLimiter"
+    participant L as "Shared CallLimiter"
+    participant API as "Downstream Service"
+
+    App->>RL: Invoke Function
+    
+    loop "Retry Loop (Max 3)"
+        Note over RL, L: Check Rate Limit Contract
+        RL->>L: Request Execution Slot
+        L->>L: Calculate Window (perf_counter)
+        L-->>RL: Slot Granted (after Paced Wait)
+        
+        RL->>API: Attempt Execution
+        
+        alt "Success"
+            API-->>RL: 200 OK
+            RL-->>App: Return Result
+        else "Error"
+            Note over RL: Trigger on_retry
+            RL->>RL: Backoff Delay
+        end
+    end
+    
+    alt "Final Failure"
+        RL->>RL: Execute Fallback
+        RL-->>App: Fallback Result
+    end
+```
+
+</details>
 
 ## 🛠 Installation
 
@@ -101,16 +220,8 @@ def my_function():
     pass
 ```
 ---
-## ✨ Key Features
-
-* Low-Jitter Timing: Uses time.perf_counter() and resolution-aware sleeping to prevent the "creeping delays" common in standard rate limiters.
-* Zero-Hardcode Logic: Accounts for "OS Jitter" to ensure time.sleep remains accurate even under system load.
-* Thread-Safe: Designed for multithreaded environments where multiple workers hit the same limited resource.
-* Thread-Synchronized State: Shared locks ensure that 10 threads hitting the same limiter behave as a single unit.
-* Synchronized Pacing: In hybrid mode, retries are queued through the global limiter, preventing a 'thundering herd' and ensuring you never exceed your quota during recovery.
-
----
 ## 📋 Links
 
-* 📖 [Full Documentation](https://call-limiter.readthedocs.io/)
-* 📝 [Release Notes](https://github.com/eyukselen/call-limiter/releases)
+* 📖 [Full Documentation](https://call-limiter.readthedocs.io/)  
+* 📝 [Release Notes](https://github.com/eyukselen/call-limiter/releases)  
+---
