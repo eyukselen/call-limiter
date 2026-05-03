@@ -91,6 +91,7 @@ sequenceDiagram
     else "No Fallback"
         R-->>App: "Raise Final Exception"
     end
+
 ``` 
 
 </details>
@@ -145,7 +146,7 @@ pip install call-limiter
 
 ## Usage
 
-### Component 1: ⏱️ CallLimiter
+### Component 1: ⏱️ CallLimiter  
 
 **Scenario:** I want to "rate limit" (throttle) my function so it limits my calls to 5 calls per second. I also want to have an option to select if I want 5 calls to fire instantly or spread across evenly in the 1 second period.
 
@@ -160,8 +161,10 @@ from call_limiter import CallLimiter
 limiter = CallLimiter(calls=5, period=1, allow_burst=True)
 throttled_func = limiter(my_function)
 ```
+
 **Usage-2: 5 calls per 1 second paced (evenly spread calls)**
 *Best for: Avoiding "spiky" traffic patterns that trigger anti-bot protections.*
+
 ```python
 
 from call_limiter import CallLimiter
@@ -170,6 +173,7 @@ from call_limiter import CallLimiter
 limiter = CallLimiter(calls=5, period=1, allow_burst=False)
 throttled_func = limiter(my_function)
 ```
+
 ---
 ### Component 2: ♻️ CallRetry
 
@@ -194,6 +198,7 @@ retry = CallRetry(
 # If you didn't pass fail_handler, it would raise the ValueError.
 resilient_func = retry(my_function)
 ```
+
 ---
 ### Component 3: 🛡️ ResilientLimiter
 **Scenario:** I want a rate limiter that can also handle failed calls. `my_function` should be called  
@@ -204,6 +209,7 @@ Flow Logic:
 * fallback=`falback_handler` if it still fails notify me, if not provided raise error!
 Note: each retry will comply "5 calls/per second with burst (or drip)" tempo to respect rate limiter  
 Note: on_retry receives (exception, attempt_number), while fallback is a simple callable.
+
 ```python
 from call_limiter import ResilientLimiter
 
@@ -222,6 +228,7 @@ def my_function():
     # This will respect the 5/sec pace, even during retries.
     pass
 ```
+
 ---
 ## 📋 Links
 * [![Docs](https://img.shields.io/badge/Docs-white?logo=readthedocs&logoColor=8CA1AF)](https://call-limiter.readthedocs.io/)
