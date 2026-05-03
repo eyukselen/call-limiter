@@ -1,4 +1,4 @@
-# call-limiter 🚀
+# call-limiter ⏱️♻️🛡️
 
 [![PyPI - Version](https://img.shields.io/pypi/v/call-limiter?color=blue&cache_bust=1)](https://pypi.org/project/call-limiter/)
 [![Documentation](https://readthedocs.org/projects/call-limiter/badge/?version=latest)](https://call-limiter.readthedocs.io/en/latest/?badge=latest)
@@ -8,7 +8,7 @@
 
 A high-precision concurrency control library for distributed systems resilience.
 
-<img src="docs/assets/call_limiter_thumbnail.png" alt="Call-Limiter Design" width="500">
+<img src="https://raw.githubusercontent.com/eyukselen/call-limiter/main/docs/assets/call_limiter_thumbnail.png" alt="Call-Limiter Design" width="500">
 
 ## ✨ Key Features
 
@@ -21,7 +21,7 @@ A high-precision concurrency control library for distributed systems resilience.
 ---
 ## 📦 Core Components
 
-* **CallLimiter**: A high-precision throttler that paces function calls to stay within specific rate limits.
+* ⏱️ **CallLimiter**: A high-precision throttler that paces function calls to stay within specific rate limits.
 
 
 <details>
@@ -60,7 +60,7 @@ Call-10                                 |                       [█]   |
 
 
 
-* **CallRetry**: A resilience decorator that re-runs failed functions with a configurable delay and exception handling.
+* ♻️ **CallRetry**: A resilience decorator that re-runs failed functions with a configurable delay and exception handling.
 
 <details>
 <summary><b>⏱️ View Retry Strategy Diagram</b></summary>
@@ -95,7 +95,7 @@ sequenceDiagram
 
 </details>
 
-* **ResilientLimiter**: A hybrid solution that combines pacing with Coordinated Recovery, ensuring retries never exceed your defined rate limit across threads.
+* 🛡️ **ResilientLimiter**: A hybrid solution that combines pacing with Coordinated Recovery, ensuring retries never exceed your defined rate limit across threads.
 
 <details>
 <summary><b>⏱️ View Resilient Strategy Diagram</b></summary>
@@ -142,7 +142,10 @@ pip install call-limiter
 ```
 
 ---
-### Component 1: CallLimiter
+
+## Usage
+
+### Component 1: ⏱️ CallLimiter
 
 **Scenario:** I want to "rate limit" (throttle) my function so it limits my calls to 5 calls per second. I also want to have an option to select if I want 5 calls to fire instantly or spread across evenly in the 1 second period.
 
@@ -168,7 +171,7 @@ limiter = CallLimiter(calls=5, period=1, allow_burst=False)
 throttled_func = limiter(my_function)
 ```
 ---
-### Component 2: CallRetry
+### Component 2: ♻️ CallRetry
 
 **Scenario:** I want a retry logic to use with my function calls. 
 If `my_function` raises ValueError exception, it should retry up to 5 times with 1-second delay between attempts.
@@ -192,7 +195,7 @@ retry = CallRetry(
 resilient_func = retry(my_function)
 ```
 ---
-### Component 3: ResilientLimiter
+### Component 3: 🛡️ ResilientLimiter
 **Scenario:** I want a rate limiter that can also handle failed calls. `my_function` should be called  
 Flow Logic:
 * 5 calls/per second with burst (or drip), 
@@ -221,7 +224,7 @@ def my_function():
 ```
 ---
 ## 📋 Links
-
-* 📖 [Full Documentation](https://call-limiter.readthedocs.io/)  
-* 📝 [Release Notes](https://github.com/eyukselen/call-limiter/releases)  
+* [![Docs](https://img.shields.io/badge/Docs-white?logo=readthedocs&logoColor=8CA1AF)](https://call-limiter.readthedocs.io/)
+* [![PyPI](https://img.shields.io/badge/PyPI-white?logo=pypi&logoColor=3775A9)](https://pypi.org/project/call-limiter/)
+* [![GitHub](https://img.shields.io/badge/GitHub-white?logo=github&logoColor=black)](https://github.com/eyukselen/call-limiter)
 ---
