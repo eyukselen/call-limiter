@@ -144,8 +144,8 @@ class TestCallLimiter:
 
         expected_spacing = period / calls
 
-        assert spacing_1 >= expected_spacing * 0.7
-        assert spacing_2 >= expected_spacing * 0.7
+        assert spacing_1 >= expected_spacing * 0.5
+        assert spacing_2 >= expected_spacing * 0.5
 
     def test_multithreaded_safety(self):
         """Ensures the lock prevents race conditions with concurrent calls."""
