@@ -81,10 +81,22 @@ class TestCallLimiter:
         assert total_duration >= 0.2, "6th call did not wait for the refill drip"
 
     def test_burst_full_cycle(self):
-        """Ensures a second burst fires correctly after the first burst + wait."""
+        """
+        Verifies standard token bucket behavior.
+
+        Expected:
+        - Initial burst is immediate.
+        - After exhaustion, tokens refill gradually.
+        - Refill rate matches configured rate.
+        """
         calls = 3
         period = 0.5
-        limiter = CallLimiter(calls=calls, period=period, allow_burst=True)
+
+        limiter = CallLimiter(
+            calls=calls,
+            period=period,
+            allow_burst=True,
+        )
 
         timestamps = []
 
@@ -92,24 +104,48 @@ class TestCallLimiter:
         def record():
             timestamps.append(time.perf_counter())
 
-        # First burst: 3 calls should be near-instant
+        # -----------------------------------------
+        # First burst should be immediate
+        # -----------------------------------------
         for _ in range(3):
             record()
 
-        first_burst_duration = timestamps[-1] - timestamps[0]
-        assert first_burst_duration < 0.01, f"First burst took {first_burst_duration}s"
+        first_burst_duration = timestamps[2] - timestamps[0]
 
-        # Next 3 calls trigger a wait, then should burst again
+        assert first_burst_duration < 0.01, (
+            f"First burst took {first_burst_duration}s"
+        )
+
+        # -----------------------------------------
+        # Subsequent calls should refill gradually
+        # -----------------------------------------
         for _ in range(3):
             record()
 
-        # Calls 3-5 (second burst) should also be near-instant relative to each other
-        second_burst_duration = timestamps[-1] - timestamps[3]
-        assert second_burst_duration < 0.01, f"Second burst took {second_burst_duration}s"
+        refill_duration = timestamps[5] - timestamps[3]
 
-        # But there should be a gap between the two bursts (~0.5s period)
-        gap_between_bursts = timestamps[3] - timestamps[0]
-        assert gap_between_bursts >= 0.4, f"Gap between bursts was {gap_between_bursts}s, expected ~0.5s"
+        expected_per_token = period / calls  # ~0.166s
+        expected_total = expected_per_token * 2
+
+        # Allow scheduler jitter / CI variance
+        lower_bound = expected_total * 0.7
+        upper_bound = expected_total * 1.5
+
+        assert lower_bound <= refill_duration <= upper_bound, (
+            f"Refill duration was {refill_duration}s, "
+            f"expected roughly {expected_total}s"
+        )
+
+        # -----------------------------------------
+        # Ensure refill spacing is roughly correct
+        # -----------------------------------------
+        spacing_1 = timestamps[4] - timestamps[3]
+        spacing_2 = timestamps[5] - timestamps[4]
+
+        expected_spacing = period / calls
+
+        assert spacing_1 >= expected_spacing * 0.7
+        assert spacing_2 >= expected_spacing * 0.7
 
     def test_multithreaded_safety(self):
         """Ensures the lock prevents race conditions with concurrent calls."""
