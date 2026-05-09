@@ -459,13 +459,9 @@ class CallLimiterV4:
         self.samples_collected = 0
         self.max_samples = 50
 
-    # ------------------------------------------------------------------
-    # JITTER LEARNING
-    # ------------------------------------------------------------------
-
     def _learn_jitter(self, requested_sleep: float, actual_sleep: float):
         """
-        Learn average OS sleep overshoot using EMA.
+        Learn average OS sleep overshoot.
         """
         overshoot = max(0.0, actual_sleep - requested_sleep)
 
@@ -480,10 +476,6 @@ class CallLimiterV4:
 
             # Cap insane scheduler spikes
             self.os_jitter = min(self.os_jitter, 0.2)
-
-    # ------------------------------------------------------------------
-    # PRECISE SLEEP
-    # ------------------------------------------------------------------
 
     def _sleep_precise(self, duration: float):
         """
@@ -513,9 +505,6 @@ class CallLimiterV4:
 
         coarse_sleep = duration - safety_margin
 
-        # --------------------------------------------------------------
-        # 1. COARSE SLEEP
-        # --------------------------------------------------------------
         if coarse_sleep > 0:
             before = time.perf_counter()
 
@@ -525,9 +514,6 @@ class CallLimiterV4:
 
             self._learn_jitter(coarse_sleep, actual)
 
-        # --------------------------------------------------------------
-        # 2. FINE SLEEP STAGES
-        # --------------------------------------------------------------
         fine_intervals = (
             0.001,
             0.0001,
@@ -543,24 +529,13 @@ class CallLimiterV4:
 
                 time.sleep(interval)
 
-        # --------------------------------------------------------------
-        # 3. FINAL MICRO-SPIN
-        # --------------------------------------------------------------
         while time.perf_counter() < target:
             pass
-
-    # ------------------------------------------------------------------
-    # WAIT
-    # ------------------------------------------------------------------
 
     def wait(self):
         """
         Block until a call is allowed.
         """
-
-        # ==============================================================
-        # FIXED WINDOW BURST MODE
-        # ==============================================================
         if self.allow_burst:
 
             while True:
@@ -595,15 +570,9 @@ class CallLimiterV4:
 
                 self._sleep_precise(wait_time)
 
-        # ==============================================================
-        # DRIP MODE
-        # ==============================================================
         else:
-
             now = time.perf_counter()
-
             with self.lock:
-
                 # Catch up if we are behind schedule
                 if now > self.next_allowed_time:
                     self.next_allowed_time = now
@@ -617,10 +586,6 @@ class CallLimiterV4:
 
             if wait_time > 0:
                 self._sleep_precise(wait_time)
-
-    # ------------------------------------------------------------------
-    # DECORATOR SUPPORT
-    # ------------------------------------------------------------------
 
     def __call__(self, func: Callable) -> Callable:
 

@@ -5,125 +5,197 @@ from typing import Callable, Tuple, Type, Optional, Any
 
 
 class CallLimiter:
-    """A high-precision, thread-safe rate limiter using a token bucket algorithm.
+    """
+    High-Performance Rate Limiter.
 
-    Paces function calls to stay within a specified rate limit. Supports two
-    modes: burst (all calls fire immediately up to capacity) and drip (calls
-    are evenly spaced across the period).
+    Modes
+    -----
+    allow_burst=True
+        Fixed-window burst limiter.
+        Example:
+            calls=5, period=10
 
-    Uses a hybrid sleep strategy combining ``time.sleep()`` with a busy-wait
-    loop for sub-millisecond precision. OS scheduling jitter is learned
-    automatically via an adaptive moving average during runtime.
+        Allows:
+            5 immediate calls
+            then blocks until next 10-second window.
 
-    Can be used as a decorator or by calling ``wait()`` directly.
+    allow_burst=False
+        Strict drip/paced limiter.
+        Evenly spaces calls across the period.
 
-    Args:
-        calls: Maximum number of calls allowed per period.
-        period: Time window in seconds for the rate limit.
-        allow_burst: If True, all calls in a period can fire immediately.
-            If False, calls are evenly spaced (drip mode).
-
-    Examples:
-        As a decorator with burst mode:
-
-        >>> limiter = CallLimiter(calls=5, period=1.0, allow_burst=True)
-        >>> @limiter
-        ... def my_function():
-        ...     pass
-
-        As a decorator with drip mode (one call every 0.2s):
-
-        >>> limiter = CallLimiter(calls=5, period=1.0, allow_burst=False)
-        >>> throttled = limiter(my_function)
-
-        Direct usage with ``wait()``:
-
-        >>> limiter = CallLimiter(calls=10, period=1.0)
-        >>> for _ in range(10):
-        ...     limiter.wait()
-        ...     do_work()
+    Features
+    --------
+    - Thread-safe
+    - High-precision sleep
+    - Adaptive OS jitter compensation
+    - CPU efficient (minimal spin waiting)
     """
 
-    def __init__(self, calls: int, period: float = 1.0, allow_burst: bool = False):
-        self.rate = calls / period
-        self.capacity = float(calls) if allow_burst else 1.0
-        self.window = self.capacity / self.rate
-        self.tokens = self.capacity
-        self.last_refill = time.perf_counter()
+    def __init__(
+            self,
+            calls: int,
+            period: float = 1.0,
+            allow_burst: bool = False,
+    ):
+        if calls <= 0:
+            raise ValueError("calls must be positive")
+
+        if period <= 0:
+            raise ValueError("period must be positive")
+
+        self.calls = calls
+        self.period = period
+        self.allow_burst = allow_burst
+
+        self.period_per_call = period / calls
+
         self.lock = threading.Lock()
 
+        now = time.perf_counter()
+
+        if allow_burst:
+            # FIXED WINDOW MODE
+            self.capacity = calls
+            self.calls_in_window = 0
+            self.window_start = now
+
+        else:
+            # DRIP MODE
+            self.next_allowed_time = now
+
+        # Adaptive sleep jitter learning
         self.os_jitter = 0.0
         self.samples_collected = 0
+        self.max_samples = 50
+
+    def _learn_jitter(self, requested_sleep: float, actual_sleep: float):
+        """
+        Learn average OS sleep overshoot.
+        """
+        overshoot = max(0.0, actual_sleep - requested_sleep)
+
+        with self.lock:
+            self.samples_collected += 1
+
+            alpha = 1.0 / min(self.samples_collected, self.max_samples)
+
+            self.os_jitter = (
+                                     self.os_jitter * (1.0 - alpha)
+                             ) + (overshoot * alpha)
+
+            # Cap insane scheduler spikes
+            self.os_jitter = min(self.os_jitter, 0.2)
+
+    def _sleep_precise(self, duration: float):
+        """
+        High precision sleep with adaptive jitter compensation.
+
+        Strategy:
+            1. Coarse sleep
+            2. Fine sleep stages
+            3. Tiny final spin
+        """
+        if duration <= 0:
+            return
+
+        start = time.perf_counter()
+        target = start + duration
+
+        # Snapshot jitter stats
+        with self.lock:
+            jitter = self.os_jitter
+            samples = self.samples_collected
+
+        # Conservative early learning
+        if samples < 3:
+            safety_margin = duration * 0.6
+        else:
+            safety_margin = max(jitter, duration * 0.05)
+
+        coarse_sleep = duration - safety_margin
+
+        if coarse_sleep > 0:
+            before = time.perf_counter()
+
+            time.sleep(coarse_sleep)
+
+            actual = time.perf_counter() - before
+
+            self._learn_jitter(coarse_sleep, actual)
+
+        fine_intervals = (
+            0.001,
+            0.0001,
+            0.00001,
+        )
+
+        for interval in fine_intervals:
+            while True:
+                remaining = target - time.perf_counter()
+
+                if remaining <= interval:
+                    break
+
+                time.sleep(interval)
+
+        while time.perf_counter() < target:
+            pass
 
     def wait(self):
-        """Block until a token is available, enforcing the configured rate limit.
-
-        Acquires a token from the bucket, sleeping if necessary to maintain
-        the target rate. Uses high-precision timing with adaptive jitter
-        compensation to minimize drift.
-
-        This method is thread-safe.
         """
-        with self.lock:
+        Block until a call is allowed.
+        """
+        if self.allow_burst:
+
+            while True:
+
+                with self.lock:
+
+                    now = time.perf_counter()
+
+                    elapsed = now - self.window_start
+
+                    # Advance windows precisely
+                    if elapsed >= self.period:
+                        windows_passed = int(elapsed / self.period)
+
+                        self.window_start += (
+                                windows_passed * self.period
+                        )
+
+                        self.calls_in_window = 0
+
+                    # Still capacity left in this window
+                    if self.calls_in_window < self.capacity:
+                        self.calls_in_window += 1
+                        return
+
+                    # Window exhausted
+                    wait_time = self.period - (
+                            now - self.window_start
+                    )
+
+                self._sleep_precise(wait_time)
+
+        else:
             now = time.perf_counter()
+            with self.lock:
+                # Catch up if we are behind schedule
+                if now > self.next_allowed_time:
+                    self.next_allowed_time = now
 
-            # If the period has passed, reset the bucket and the window
-            if now  >= self.window + self.last_refill:
-                self.tokens = self.capacity
-                self.last_refill = self.last_refill + self.window
+                scheduled_time = self.next_allowed_time
 
-            if self.tokens < 1.0:
-                # Calculate time remaining in the current window
-                sleep_needed = (self.last_refill + self.window) - now
+                # Reserve next slot
+                self.next_allowed_time += self.period_per_call
 
-                if sleep_needed > 0:
-                    # --- High Precision Sleep ---
-                    # Use a safety margin to always undershoot time.sleep().
-                    # The busy-wait loop corrects forward to the exact target.
-                    # This prevents overshoot on high-jitter systems (e.g. macOS)
-                    # where time.sleep() can exceed the requested duration.
-                    #
-                    # Before enough jitter samples are collected, use a large
-                    # percentage-based margin (60%) so the busy-wait handles
-                    # most of the wait. Once os_jitter has learned the real
-                    # platform jitter, switch to using it directly.
-                    if self.samples_collected < 3:
-                        safety_margin = sleep_needed * 0.6
-                    else:
-                        safety_margin = max(self.os_jitter, sleep_needed * 0.1)
-                    coarse = sleep_needed - safety_margin
+            wait_time = scheduled_time - now
 
-                    if coarse > 0:
-                        t_before = time.perf_counter()
-                        time.sleep(coarse)
-                        actual_sleep = time.perf_counter() - t_before
+            if wait_time > 0:
+                self._sleep_precise(wait_time)
 
-                        # Learn OS jitter via adaptive EMA
-                        measured_jitter = max(0, actual_sleep - coarse)
-                        self.samples_collected += 1
-                        alpha = 1.0 / min(20, self.samples_collected)
-                        self.os_jitter = min(0.1, (self.os_jitter * (1 - alpha)) + (measured_jitter * alpha))
+    def __call__(self, func: Callable) -> Callable:
 
-                    target = now + sleep_needed
-                    while time.perf_counter() < target:
-                        pass
-
-                # After waiting, the window resets
-                self.tokens = self.capacity
-                # Fix: Update last_refill relative to target time to avoid drift
-                self.last_refill = now + sleep_needed if sleep_needed > 0 else now
-
-            self.tokens -= 1.0
-
-    def __call__(self, func):
-        """Decorate a function to enforce the rate limit before each call.
-
-        Args:
-            func: The function to wrap with rate limiting.
-
-        Returns:
-            A wrapped function that calls ``wait()`` before each invocation.
-        """
         @wraps(func)
         def wrapper(*args, **kwargs):
             self.wait()

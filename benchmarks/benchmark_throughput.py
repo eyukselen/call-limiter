@@ -1,10 +1,8 @@
 from time import perf_counter, sleep
 import time
-import threading
-from functools import wraps
-from typing import Callable
 import random
-from archive.limiter_archive import CallLimiterV3, CallLimiterV4 as CallLimiter
+from call_limiter import CallLimiter
+# from archive.limiter_archive import CallLimiter, CallLimiterV4
 
 
 def unlimited_tester(func_to_limit, total_calls, label):
@@ -58,12 +56,10 @@ def benchmark_throughput():
     res = limiter_tester(_worker_cpu, CallLimiter, 10, 1, False, 60, "drip_cpu")
     all_stats.append(res)
 
-
     res = limiter_tester(_worker_network, CallLimiter, 10, 1, True, 60, "burst_network")
     all_stats.append(res)
     res = limiter_tester(_worker_network, CallLimiter, 10, 1, False, 60, "drip_network")
     all_stats.append(res)
-
 
     # res = unlimited_tester(_worker_cpu, 60, "raw_network")
     # all_stats.append(res)

@@ -5,7 +5,7 @@
     "calls_per_period": 10,
     "period": 1,
     "Burst": true,
-    "elapsed_time": 5.005426641961094,
+    "elapsed_time": 5.001779255049769,
     "expected_time": 5.0
   },
   {
@@ -14,7 +14,7 @@
     "calls_per_period": 10,
     "period": 1,
     "Burst": false,
-    "elapsed_time": 5.900556498032529,
+    "elapsed_time": 5.900217906979378,
     "expected_time": 6.0
   },
   {
@@ -23,7 +23,7 @@
     "calls_per_period": 10,
     "period": 1,
     "Burst": true,
-    "elapsed_time": 5.475086208956782,
+    "elapsed_time": 5.516547188977711,
     "expected_time": 5.0
   },
   {
@@ -32,7 +32,7 @@
     "calls_per_period": 10,
     "period": 1,
     "Burst": false,
-    "elapsed_time": 5.99076996895019,
+    "elapsed_time": 5.992925723956432,
     "expected_time": 6.0
   }
 ]

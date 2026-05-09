@@ -19,8 +19,7 @@ from typing import Any, Dict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# from call_limiter import CallLimiter
-from archive.limiter_archive import CallLimiterV4 as CallLimiter
+from call_limiter import CallLimiter
 
 
 def benchmark_precision(calls_per_sec, period_seconds,  total_calls, allow_burst):

@@ -80,17 +80,17 @@ class TestCallLimiter:
         total_duration = time.perf_counter() - start
         assert total_duration >= 0.2, "6th call did not wait for the refill drip"
 
-    def test_burst_full_cycle(self):
+    def test_burst_fixed_window(self):
         """
-        Verifies standard token bucket behavior.
+        Verifies Fixed Window burst behavior.
 
         Expected:
-        - Initial burst is immediate.
-        - After exhaustion, tokens refill gradually.
-        - Refill rate matches configured rate.
+        - Initial 'calls' count is immediate.
+        - Subsequent calls block until the period has elapsed since window_start.
+        - After the window resets, the next burst is immediate again.
         """
         calls = 3
-        period = 0.5
+        period = 0.5  # 500ms window
 
         limiter = CallLimiter(
             calls=calls,
@@ -104,48 +104,30 @@ class TestCallLimiter:
         def record():
             timestamps.append(time.perf_counter())
 
-        # -----------------------------------------
-        # First burst should be immediate
-        # -----------------------------------------
-        for _ in range(3):
+        # 1. Trigger the first full burst (3 calls) + 1 blocking call
+        # We call 4 times: 0, 1, 2 should be instant. 3 should wait for the new window.
+        for _ in range(4):
             record()
 
+        # Verify first burst was immediate
         first_burst_duration = timestamps[2] - timestamps[0]
+        assert first_burst_duration < 0.02, f"First burst too slow: {first_burst_duration}s"
 
-        assert first_burst_duration < 0.01, (
-            f"First burst took {first_burst_duration}s"
-        )
+        # Verify the 4th call (first call of 2nd window) waited for the period
+        wait_for_window_2 = timestamps[3] - timestamps[0]
+        assert wait_for_window_2 >= period, f"Window reset too early: {wait_for_window_2}s"
 
-        # -----------------------------------------
-        # Subsequent calls should refill gradually
-        # -----------------------------------------
-        for _ in range(3):
+        # 2. Immediately fire the rest of the second window (calls 5 and 6)
+        for _ in range(2):
             record()
 
-        refill_duration = timestamps[5] - timestamps[3]
+        # In Fixed Window, the remainder of the burst should be instant
+        second_burst_duration = timestamps[5] - timestamps[3]
+        assert second_burst_duration < 0.02, f"Second burst was not immediate: {second_burst_duration}s"
 
-        expected_per_token = period / calls  # ~0.166s
-        expected_total = expected_per_token * 2
-
-        # Allow scheduler jitter / CI variance
-        lower_bound = expected_total * 0.7
-        upper_bound = expected_total * 1.5
-
-        assert lower_bound <= refill_duration <= upper_bound, (
-            f"Refill duration was {refill_duration}s, "
-            f"expected roughly {expected_total}s"
-        )
-
-        # -----------------------------------------
-        # Ensure refill spacing is roughly correct
-        # -----------------------------------------
-        spacing_1 = timestamps[4] - timestamps[3]
-        spacing_2 = timestamps[5] - timestamps[4]
-
-        expected_spacing = period / calls
-
-        assert spacing_1 >= expected_spacing * 0.5
-        assert spacing_2 >= expected_spacing * 0.5
+        # 3. Final sanity check: Total time for 2 full windows
+        total_duration = timestamps[5] - timestamps[0]
+        assert total_duration >= period, "Total time shorter than one period"
 
     def test_multithreaded_safety(self):
         """Ensures the lock prevents race conditions with concurrent calls."""
