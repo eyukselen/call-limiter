@@ -1,0 +1,62 @@
+[
+  {
+    "rate": 5000,
+    "total_calls": 20000,
+    "mode": "burst",
+    "expected_total_time": 3.0,
+    "elapsed": 3.002087389002554,
+    "max_single_drift": 5.5657001212239265e-05,
+    "accuracy_pct": 99.93042036658153,
+    "time_error": 0.0020873890025541186
+  },
+  {
+    "rate": 10000,
+    "total_calls": 40000,
+    "mode": "burst",
+    "expected_total_time": 3.0,
+    "elapsed": 3.0041608560131863,
+    "max_single_drift": 1.041503855958581e-05,
+    "accuracy_pct": 99.86130479956046,
+    "time_error": 0.004160856013186276
+  },
+  {
+    "rate": 20000,
+    "total_calls": 80000,
+    "mode": "burst",
+    "expected_total_time": 3.0,
+    "elapsed": 3.0083403140306473,
+    "max_single_drift": 6.196903996169567e-05,
+    "accuracy_pct": 99.72198953231177,
+    "time_error": 0.008340314030647278
+  },
+  {
+    "rate": 50000,
+    "total_calls": 200000,
+    "mode": "burst",
+    "expected_total_time": 3.0,
+    "elapsed": 3.0214542140020058,
+    "max_single_drift": 4.928902490064502e-05,
+    "accuracy_pct": 99.28485953326648,
+    "time_error": 0.021454214002005756
+  },
+  {
+    "rate": 100000,
+    "total_calls": 400000,
+    "mode": "burst",
+    "expected_total_time": 3.0,
+    "elapsed": 3.045302437036298,
+    "max_single_drift": 4.7829002141952515e-05,
+    "accuracy_pct": 98.48991876545674,
+    "time_error": 0.045302437036298215
+  },
+  {
+    "rate": 200000,
+    "total_calls": 800000,
+    "mode": "burst",
+    "expected_total_time": 3.0,
+    "elapsed": 3.087965615966823,
+    "max_single_drift": 4.9592985305935144e-05,
+    "accuracy_pct": 97.0678128011059,
+    "time_error": 0.08796561596682295
+  }
+]

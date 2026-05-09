@@ -399,135 +399,230 @@ class CallLimiterV4:
     """
     High-Performance Rate Limiter.
 
-    Modes:
-    - Burst (allow_burst=True): Token Bucket algorithm. Allows bursts up to capacity.
-    - Drip (allow_burst=False): Strict spacing. One call every (period/calls) seconds.
+    Modes
+    -----
+    allow_burst=True
+        Fixed-window burst limiter.
+        Example:
+            calls=5, period=10
 
-    Features:
-    - Thread-safe.
-    - Adaptive OS jitter compensation for high-precision sleeping.
-    - No busy-wait loops (CPU efficient).
+        Allows:
+            5 immediate calls
+            then blocks until next 10-second window.
+
+    allow_burst=False
+        Strict drip/paced limiter.
+        Evenly spaces calls across the period.
+
+    Features
+    --------
+    - Thread-safe
+    - High-precision sleep
+    - Adaptive OS jitter compensation
+    - CPU efficient (minimal spin waiting)
     """
 
-    def __init__(self, calls: int, period: float = 1.0, allow_burst: bool = False):
+    def __init__(
+        self,
+        calls: int,
+        period: float = 1.0,
+        allow_burst: bool = False,
+    ):
         if calls <= 0:
-            raise ValueError("Number of calls must be positive")
+            raise ValueError("calls must be positive")
+
         if period <= 0:
-            raise ValueError("Period must be positive")
+            raise ValueError("period must be positive")
 
+        self.calls = calls
+        self.period = period
         self.allow_burst = allow_burst
-        self.rate = calls / period
-        self.period_per_call = period / calls
 
-        if allow_burst:
-            # --- Token Bucket Mode ---
-            self.capacity = float(calls)
-            self.tokens = self.capacity
-            self.last_refill = time.perf_counter()
-        else:
-            # --- Drip Mode ---
-            self.next_allowed_time = time.perf_counter()
+        self.period_per_call = period / calls
 
         self.lock = threading.Lock()
 
-        # Jitter learning stats
+        now = time.perf_counter()
+
+        if allow_burst:
+            # FIXED WINDOW MODE
+            self.capacity = calls
+            self.calls_in_window = 0
+            self.window_start = now
+
+        else:
+            # DRIP MODE
+            self.next_allowed_time = now
+
+        # Adaptive sleep jitter learning
         self.os_jitter = 0.0
         self.samples_collected = 0
         self.max_samples = 50
 
-    def _learn_jitter(self, coarse_sleep: float, actual_sleep: float):
-        """Updates the OS jitter estimate using Exponential Moving Average."""
-        measured_jitter = max(0, actual_sleep - coarse_sleep)
+    # ------------------------------------------------------------------
+    # JITTER LEARNING
+    # ------------------------------------------------------------------
+
+    def _learn_jitter(self, requested_sleep: float, actual_sleep: float):
+        """
+        Learn average OS sleep overshoot using EMA.
+        """
+        overshoot = max(0.0, actual_sleep - requested_sleep)
+
         with self.lock:
             self.samples_collected += 1
-            alpha = 1.0 / min(self.max_samples, self.samples_collected)
-            self.os_jitter = (self.os_jitter * (1 - alpha)) + (measured_jitter * alpha)
-            self.os_jitter = min(0.2, self.os_jitter)
+
+            alpha = 1.0 / min(self.samples_collected, self.max_samples)
+
+            self.os_jitter = (
+                self.os_jitter * (1.0 - alpha)
+            ) + (overshoot * alpha)
+
+            # Cap insane scheduler spikes
+            self.os_jitter = min(self.os_jitter, 0.2)
+
+    # ------------------------------------------------------------------
+    # PRECISE SLEEP
+    # ------------------------------------------------------------------
 
     def _sleep_precise(self, duration: float):
         """
-        Sleeps for 'duration' with adaptive jitter compensation.
-        Uses a multi-stage sleep strategy to avoid busy-waiting.
+        High precision sleep with adaptive jitter compensation.
+
+        Strategy:
+            1. Coarse sleep
+            2. Fine sleep stages
+            3. Tiny final spin
         """
         if duration <= 0:
             return
 
-        # Read jitter stats (lock held briefly)
-        with self.lock:
-            local_jitter = self.os_jitter
-            local_samples = self.samples_collected
+        start = time.perf_counter()
+        target = start + duration
 
-        # Calculate safety margin
-        if local_samples < 3:
+        # Snapshot jitter stats
+        with self.lock:
+            jitter = self.os_jitter
+            samples = self.samples_collected
+
+        # Conservative early learning
+        if samples < 3:
             safety_margin = duration * 0.6
         else:
-            safety_margin = max(local_jitter, duration * 0.05)
+            safety_margin = max(jitter, duration * 0.05)
 
-        coarse = duration - safety_margin
+        coarse_sleep = duration - safety_margin
 
-        # 1. Coarse Sleep
-        if coarse > 0:
-            t_before = time.perf_counter()
-            time.sleep(coarse)
-            actual = time.perf_counter() - t_before
-            self._learn_jitter(coarse, actual)
+        # --------------------------------------------------------------
+        # 1. COARSE SLEEP
+        # --------------------------------------------------------------
+        if coarse_sleep > 0:
+            before = time.perf_counter()
 
-        # 2. Fine Sleep (Multi-stage)
-        target = time.perf_counter() + duration
-        intervals = [0.001, 0.0001, 0.00001]
+            time.sleep(coarse_sleep)
 
-        for interval in intervals:
-            remaining = target - time.perf_counter()
-            if remaining <= 0:
-                break
-            time.sleep(min(remaining, interval))
+            actual = time.perf_counter() - before
 
-        # 3. Final Spin (Sub-microsecond precision only)
+            self._learn_jitter(coarse_sleep, actual)
+
+        # --------------------------------------------------------------
+        # 2. FINE SLEEP STAGES
+        # --------------------------------------------------------------
+        fine_intervals = (
+            0.001,
+            0.0001,
+            0.00001,
+        )
+
+        for interval in fine_intervals:
+            while True:
+                remaining = target - time.perf_counter()
+
+                if remaining <= interval:
+                    break
+
+                time.sleep(interval)
+
+        # --------------------------------------------------------------
+        # 3. FINAL MICRO-SPIN
+        # --------------------------------------------------------------
         while time.perf_counter() < target:
             pass
 
+    # ------------------------------------------------------------------
+    # WAIT
+    # ------------------------------------------------------------------
+
     def wait(self):
-        """Blocks until a call is allowed."""
-        now = time.perf_counter()
+        """
+        Block until a call is allowed.
+        """
 
+        # ==============================================================
+        # FIXED WINDOW BURST MODE
+        # ==============================================================
         if self.allow_burst:
-            # --- TOKEN BUCKET LOGIC ---
+
             while True:
+
                 with self.lock:
-                    elapsed = now - self.last_refill
-                    tokens_to_add = elapsed * self.rate
-                    self.tokens = min(self.capacity, self.tokens + tokens_to_add)
-                    self.last_refill = now
 
-                    if self.tokens >= 1.0:
-                        self.tokens -= 1.0
+                    now = time.perf_counter()
+
+                    elapsed = now - self.window_start
+
+                    # Advance windows precisely
+                    if elapsed >= self.period:
+
+                        windows_passed = int(elapsed / self.period)
+
+                        self.window_start += (
+                            windows_passed * self.period
+                        )
+
+                        self.calls_in_window = 0
+
+                    # Still capacity left in this window
+                    if self.calls_in_window < self.capacity:
+
+                        self.calls_in_window += 1
                         return
-                    wait_time = (1.0 - self.tokens) / self.rate
 
-                if wait_time > 0:
-                    self._sleep_precise(wait_time)
-                now = time.perf_counter()  # Refresh time for next loop
+                    # Window exhausted
+                    wait_time = self.period - (
+                        now - self.window_start
+                    )
 
+                self._sleep_precise(wait_time)
+
+        # ==============================================================
+        # DRIP MODE
+        # ==============================================================
         else:
-            # --- DRIP MODE (Single-Pass) ---
-            # Acquire lock ONCE to check and update state
+
+            now = time.perf_counter()
+
             with self.lock:
+
+                # Catch up if we are behind schedule
                 if now > self.next_allowed_time:
-                    # If we are ahead of schedule, reset to now (no debt accumulation)
                     self.next_allowed_time = now
 
-                start_time = self.next_allowed_time
-                # Move the goalpost for the NEXT call
+                scheduled_time = self.next_allowed_time
+
+                # Reserve next slot
                 self.next_allowed_time += self.period_per_call
 
-            wait_time = start_time - now
+            wait_time = scheduled_time - now
 
             if wait_time > 0:
                 self._sleep_precise(wait_time)
-            # No loop needed. The state update is deterministic.
+
+    # ------------------------------------------------------------------
+    # DECORATOR SUPPORT
+    # ------------------------------------------------------------------
 
     def __call__(self, func: Callable) -> Callable:
-        """Decorator usage."""
 
         @wraps(func)
         def wrapper(*args, **kwargs):

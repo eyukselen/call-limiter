@@ -1,0 +1,38 @@
+[
+  {
+    "label": "burst_cpu",
+    "total_calls": 60,
+    "calls_per_period": 10,
+    "period": 1,
+    "Burst": true,
+    "elapsed_time": 5.005426641961094,
+    "expected_time": 5.0
+  },
+  {
+    "label": "drip_cpu",
+    "total_calls": 60,
+    "calls_per_period": 10,
+    "period": 1,
+    "Burst": false,
+    "elapsed_time": 5.900556498032529,
+    "expected_time": 6.0
+  },
+  {
+    "label": "burst_network",
+    "total_calls": 60,
+    "calls_per_period": 10,
+    "period": 1,
+    "Burst": true,
+    "elapsed_time": 5.475086208956782,
+    "expected_time": 5.0
+  },
+  {
+    "label": "drip_network",
+    "total_calls": 60,
+    "calls_per_period": 10,
+    "period": 1,
+    "Burst": false,
+    "elapsed_time": 5.99076996895019,
+    "expected_time": 6.0
+  }
+]
