@@ -6,22 +6,21 @@ from typing import Callable, Tuple, Type, Optional, Any
 
 class CallLimiter:
     """
-    High-Performance Rate Limiter.
+    Thread-safe Rate Limiter with fixed-window ``burst`` mode and ``drip`` pacing mode.
+
+    Can be used directly by calling ``wait`` method or as a decorator
 
     Modes
     -----
     allow_burst=True
         Fixed-window burst limiter.
-        Example:
-            calls=5, period=10
-
-        Allows:
-            5 immediate calls
-            then blocks until next 10-second window.
+        first ``calls`` number of calls are fired immediately in the beginning of ``period``
+        Additional calls wait until next period.
 
     allow_burst=False
         Strict drip/paced limiter.
-        Evenly spaces calls across the period.
+        First ``calls`` number of calls evenly spaced across the ``period``.
+        Additional calls wait until next period.
 
     Features
     --------
@@ -31,12 +30,18 @@ class CallLimiter:
     - CPU efficient (minimal spin waiting)
     """
 
-    def __init__(
-            self,
-            calls: int,
-            period: float = 1.0,
-            allow_burst: bool = False,
-    ):
+    def __init__(self, calls: int, period: float = 1.0, allow_burst: bool = False):
+        """Initialize the CallLimiter.
+
+        Args:
+            calls: Number of calls allowed per period.
+            period: Window length in seconds.
+            allow_burst: if True all calls for this period shot instantly (burst).
+                         if False all calls spaced evenly across period (drip).
+
+        Raises:
+            ValueError: If ``calls`` or ``period`` is not positive.
+        """
         if calls <= 0:
             raise ValueError("calls must be positive")
 
@@ -69,8 +74,11 @@ class CallLimiter:
         self.max_samples = 50
 
     def _learn_jitter(self, requested_sleep: float, actual_sleep: float):
-        """
-        Learn average OS sleep overshoot.
+        """Learn average OS sleep overshoot.
+
+        Args:
+            requested_sleep: Target sleep duration in seconds.
+            actual_sleep: Measured elapsed sleep time in seconds.
         """
         overshoot = max(0.0, actual_sleep - requested_sleep)
 
@@ -79,9 +87,7 @@ class CallLimiter:
 
             alpha = 1.0 / min(self.samples_collected, self.max_samples)
 
-            self.os_jitter = (
-                                     self.os_jitter * (1.0 - alpha)
-                             ) + (overshoot * alpha)
+            self.os_jitter = (self.os_jitter * (1.0 - alpha)) + (overshoot * alpha)
 
             # Cap insane scheduler spikes
             self.os_jitter = min(self.os_jitter, 0.2)
@@ -94,6 +100,9 @@ class CallLimiter:
             1. Coarse sleep
             2. Fine sleep stages
             3. Tiny final spin
+
+        Args:
+            duration: Target sleep duration in seconds.
         """
         if duration <= 0:
             return
@@ -195,6 +204,15 @@ class CallLimiter:
                 self._sleep_precise(wait_time)
 
     def __call__(self, func: Callable) -> Callable:
+        """Decorate a function to apply rate limiting on each call.
+
+        Args:
+            func: Function to wrap with rate limiting.
+
+        Returns:
+            A wrapped function that calls ``wait`` before running ``func``.
+
+        """
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -212,18 +230,6 @@ class CallRetry:
     and a fallback function when all retries are exhausted.
 
     Can be used as a decorator or called directly to wrap a function.
-
-    Args:
-        retry_count: Maximum number of retries after the initial attempt.
-            Total attempts will be ``retry_count + 1``.
-        retry_interval: Delay in seconds between retry attempts.
-        retry_exceptions: Tuple of exception types that trigger a retry.
-            Any exception not in this tuple will propagate immediately.
-        on_retry: Optional callback invoked on each retry. Receives the
-            caught exception and the current attempt number (1-indexed).
-        fallback: Optional function called when all retries are exhausted.
-            Receives the last exception, and its return value is used as the
-            overall result. If not provided, the last exception is raised.
 
     Examples:
         Basic retry with fallback:
@@ -251,6 +257,21 @@ class CallRetry:
             on_retry: Optional[Callable[[Exception, int], None]] = None,
             fallback: Optional[Callable[[Exception], Any]] = None
     ):
+        """
+        Initialize the CallRetry.
+
+        Args:
+            retry_count: Maximum number of retries after the initial attempt.
+                Total attempts will be ``retry_count + 1``. 1 being initial attempt.
+            retry_interval: Delay in seconds between retry attempts.
+            retry_exceptions: Tuple of exception types that trigger a retry.
+                Any exception not in this tuple will propagate immediately.
+            on_retry: Optional callback invoked on each retry. Receives the
+                caught exception and the current attempt number (1-indexed).
+            fallback: Optional function called when all retries are exhausted.
+                Receives the last exception, and its return value is used as the
+                overall result. If not provided, the last exception is raised.
+        """
         self.retry_count = retry_count
         self.retry_interval = retry_interval
         self.retry_exceptions = retry_exceptions
@@ -261,7 +282,7 @@ class CallRetry:
         """Decorate a function to apply retry logic on each call.
 
         Args:
-            func: The function to wrap with retry logic.
+            func: Function to wrap with retry logic.
 
         Returns:
             A wrapped function that retries on configured exceptions.
@@ -303,23 +324,6 @@ class ResilientLimiter:
     retries — respects the configured rate limit. This prevents retry storms
     from overwhelming a rate-limited service.
 
-    Args:
-        calls: Maximum number of calls allowed per period.
-        period: Time window in seconds for the rate limit.
-        allow_burst: If True, calls can fire immediately up to capacity.
-            If False, calls are evenly spaced (drip mode).
-        retry_count: Maximum number of retries after the initial attempt.
-        retry_interval: Extra delay in seconds between retry attempts,
-            added on top of the rate limiter's pacing. Defaults to 0
-            because the rate limiter already enforces pacing.
-        retry_exceptions: Tuple of exception types that trigger a retry.
-        on_retry: Optional callback invoked on each retry. Receives the
-            caught exception and the current attempt number (1-indexed).
-            If not provided, retries happen silently.
-        fallback: Optional function called when all retries are exhausted.
-            Receives the last exception, and its return value is used as
-            the overall result. If not provided, the last exception is raised.
-
     Examples:
         Rate-limited function with retry and fallback:
 
@@ -347,6 +351,24 @@ class ResilientLimiter:
             on_retry: Optional[Callable[[Exception, int], None]] = None,
             fallback: Optional[Callable[[Exception], Any]] = None
     ):
+        """Initialize the ResilientLimiter.
+
+        Args:
+            calls: Number of calls allowed per period.
+            period: Window length in seconds.
+            allow_burst: if True all calls for this period shot instantly (burst)
+                         if False all calls spaced evenly across period (drip)
+            retry_count: Maximum number of retries after the initial attempt.
+                Total attempts will be ``retry_count + 1``. 1 being initial attempt.
+            retry_interval: Delay in seconds between retry attempts.
+            retry_exceptions: Tuple of exception types that trigger a retry.
+                Any exception not in this tuple will propagate immediately.
+            on_retry: Optional callback invoked on each retry. Receives the
+                caught exception and the current attempt number (1-indexed).
+            fallback: Optional function called when all retries are exhausted.
+                Receives the last exception, and its return value is used as the
+                overall result. If not provided, the last exception is raised.
+        """
         # 1. Initialize the Rate Limiter (The Pace)
         self.limiter = CallLimiter(
             calls=calls,
